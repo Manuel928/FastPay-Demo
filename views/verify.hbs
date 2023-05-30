@@ -1,0 +1,76 @@
+<?php 
+
+// DB
+$server = "localhost";
+$username = "root";
+$password = "";
+$dbname = "customerorder";
+
+$conn = mysqli_connect($server, $username, $password, $dbname);
+
+if ($conn === false) {
+    die("ERROR: Could not connect. " . mysqli_connect_error());
+}
+
+$first_name = mysqli_real_escape_string($conn, $_POST['first_name']);
+$last_name = mysqli_real_escape_string($conn, $_POST['last_name']);
+$email = mysqli_real_escape_string($conn, $_POST['email']);
+$phone_number = mysqli_real_escape_string($conn, $_POST['phone_number']);
+$network = mysqli_real_escape_string($conn, $_POST['network']);
+$amount = mysqli_real_escape_string($conn, $_POST['amount']);
+
+$sql = "INSERT INTO custorder (first_name, last_name, email, phone_number, network, amount) VALUES ('$first_name', '$last_name', '$email', '$phone_number', '$network', '$amount')";
+
+if(isset($_GET['cancelled'])) {
+    // check payment status
+    if($_GET['cancelled'] == 'true') {
+        header('Location: index.php');
+    }
+    elseif($_GET['cancelled'] == 'false'){
+        
+        $curl = curl_init();
+
+        $txid = $_GET['transaction_id'];
+        curl_setopt_array($curl, array(
+        CURLOPT_URL => "https://api.flutterwave.com/v3/transactions/{$txid}/verify",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_ENCODING => "",
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_TIMEOUT => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST => "GET",
+        CURLOPT_HTTPHEADER => array(
+            "Content-Type: application/json",
+            "Authorization: Bearer {{SEC_KEY}}"
+        ),
+        ));
+
+        $response = curl_exec($curl);
+
+        curl_close($curl);
+        
+        $res = json_decode($response);
+        if($res->cancelled) {
+            $amountPaid = $res->data->charged_amount;
+            $amountToPay = $res->data->meta->price;
+            if($amountPaid >= $amountToPay) {
+                if(mysqli_query($conn, $sql)) {
+                    $sql;
+                }
+                else {
+                    echo "ERROR: Could not save $sql. " . mysqli_error($conn);
+                }
+                mysqli_close($conn);
+            }
+            else {
+                echo "Fraud detected";
+            }
+        }
+        else {
+            echo "Cannot process payment";
+        }
+    }
+}
+
+?>
